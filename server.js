@@ -100,10 +100,23 @@ app.post('/api/generate-image', async (req, res) => {
         }
 
         // B. Appel à l'API Intelligence Artificielle (OpenAI DALL-E 3)
-        // Le compte OpenAI bloque actuellement l'accès aux modèles d'images (fréquent sur les comptes récents).
-        // Forçage du mode Simulation pour pouvoir continuer à tester le site et les crédits.
-        console.warn("⚠️ Mode Simulation activé (OpenAI bloqué par votre compte).");
-        const imageUrl = "https://via.placeholder.com/1024x1024.png?text=Generation+Reussie!+(Mode+Test)";
+        let imageUrl = "";
+        try {
+            const response = await openai.images.generate({
+                model: "dall-e-3",
+                prompt: prompt,
+                n: 1,
+                size: "1024x1024",
+            });
+            imageUrl = response.data[0].url;
+        } catch (openaiErr) {
+            console.error("Erreur API OpenAI:", openaiErr.message);
+            console.warn("⚠️ Utilisation de l'image de secours (Fallback Simulation) car OpenAI a échoué.");
+            imageUrl = "https://via.placeholder.com/1024x1024.png?text=Erreur+OpenAI+(Compte+non+autoris%C3%A9)";
+            
+            // On rembourse l'utilisateur si l'IA échoue vraiment (optionnel, mais sympa)
+            // return res.status(500).json({ error: "Erreur de l'IA: " + openaiErr.message });
+        }
 
         // C. Déduire les crédits et sauvegarder l'historique dans Supabase
         const newCredits = profile.credits - CREDIT_COST;
@@ -124,17 +137,23 @@ app.post('/api/generate-image', async (req, res) => {
 
 // 3. Route pour enregistrer la boutique Marque Blanche (bypasse RLS avec la clé secrète)
 app.post('/api/storefront', async (req, res) => {
-    const { owner_id, brand_name, subdomain, brand_color, paypal_email } = req.body;
+    const { owner_id, brand_name, subdomain, brand_color, paypal_email, price_starter, price_standard, price_pro } = req.body;
     try {
         const { data: existingStore } = await supabase.from('storefronts').select('id').eq('owner_id', owner_id).single();
         let storefrontId;
         
         if (existingStore) {
-            const { error } = await supabase.from('storefronts').update({ brand_name, subdomain, brand_color, paypal_email }).eq('owner_id', owner_id);
+            const { error } = await supabase.from('storefronts').update({ 
+                brand_name, subdomain, brand_color, paypal_email, 
+                price_starter, price_standard, price_pro 
+            }).eq('owner_id', owner_id);
             if (error) throw error;
             storefrontId = existingStore.id;
         } else {
-            const { data: newStore, error } = await supabase.from('storefronts').insert([{ owner_id, brand_name, subdomain, brand_color, paypal_email }]).select().single();
+            const { data: newStore, error } = await supabase.from('storefronts').insert([{ 
+                owner_id, brand_name, subdomain, brand_color, paypal_email,
+                price_starter, price_standard, price_pro 
+            }]).select().single();
             if (error) throw error;
             storefrontId = newStore.id;
         }
@@ -154,6 +173,50 @@ app.get('/api/storefront/:subdomain', async (req, res) => {
         if (error || !data) return res.status(404).json({ error: 'Boutique introuvable' });
         res.json({ success: true, store: data });
     } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 5. Route pour valider un paiement PayPal et ajouter des crédits
+app.post('/api/payment/confirm', async (req, res) => {
+    const { userId, txnId, amount, itemName } = req.body;
+    
+    // Vérification basique
+    if (!userId || !txnId) return res.status(400).json({ error: 'Données invalides' });
+
+    try {
+        // 1. Vérifier si la transaction existe déjà (sécurité contre le double-rechargement)
+        const { data: existingTxn } = await supabase.from('transactions').select('id').eq('paypal_transaction_id', txnId).single();
+        if (existingTxn) {
+            return res.status(400).json({ error: 'Transaction déjà traitée.' });
+        }
+
+        // 2. Déterminer les crédits en fonction du pack ou du montant
+        let creditsToAdd = 0;
+        if (itemName.includes('Starter') || amount == 5) creditsToAdd = 500;
+        else if (itemName.includes('Standard') || amount == 18) creditsToAdd = 2000;
+        else if (itemName.includes('Pro') || amount == 40) creditsToAdd = 4500;
+        else if (itemName.includes('Enterprise') || amount == 80) creditsToAdd = 10000;
+        else creditsToAdd = Math.floor(amount * 100); // Règle par défaut : 1$ = 100 crédits
+
+        // 3. Ajouter les crédits à l'utilisateur
+        const { data: profile } = await supabase.from('profiles').select('credits').eq('id', userId).single();
+        const newBalance = (profile?.credits || 0) + creditsToAdd;
+        
+        await supabase.from('profiles').update({ credits: newBalance }).eq('id', userId);
+
+        // 4. Enregistrer la transaction
+        await supabase.from('transactions').insert([{
+            user_id: userId,
+            paypal_transaction_id: txnId,
+            amount_paid: amount,
+            credits_added: creditsToAdd,
+            status: 'completed'
+        }]);
+
+        res.json({ success: true, creditsAdded: creditsToAdd, newBalance });
+    } catch (err) {
+        console.error(err);
         res.status(500).json({ error: err.message });
     }
 });
