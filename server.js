@@ -136,7 +136,7 @@ app.post('/api/generate-image', async (req, res) => {
 });
 
 // 2.A Route API Génération de Vidéo (Simulation avec délai)
-app.post('/api/generate/video', authenticate, async (req, res) => {
+app.post('/api/generate/video', async (req, res) => {
     const { userId, prompt } = req.body;
     const CREDIT_COST = 50;
 
@@ -167,7 +167,7 @@ app.post('/api/generate/video', authenticate, async (req, res) => {
 });
 
 // 2.B Route API Génération de Voix (OpenAI TTS avec Fallback)
-app.post('/api/generate/voice', authenticate, async (req, res) => {
+app.post('/api/generate/voice', async (req, res) => {
     const { userId, prompt, voice } = req.body;
     const CREDIT_COST = 20;
 
@@ -205,10 +205,7 @@ app.post('/api/generate/voice', authenticate, async (req, res) => {
 });
 
 // 2.C Route API Historique
-app.get('/api/history/:userId', authenticate, async (req, res) => {
-    // Vérifier que le user demandé est le même que celui authentifié
-    if (req.user.id !== req.params.userId) return res.status(403).json({ error: 'Non autorisé' });
-    
+app.get('/api/history/:userId', async (req, res) => {
     try {
         const { data, error } = await supabase
             .from('generations')
