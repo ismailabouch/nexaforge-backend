@@ -105,9 +105,10 @@ app.post('/api/generate-image', async (req, res) => {
             return res.status(402).json({ error: 'Fonds insuffisants. Veuillez acheter des crédits.' });
         }
 
-        // B. Appel à l'API Intelligence Artificielle (OpenAI DALL-E 3)
+        // B. Appel à l'API Intelligence Artificielle (OpenAI)
         let imageUrl = "";
         try {
+            // On essaie d'abord avec DALL-E 3 (Qualité Premium)
             const response = await openai.images.generate({
                 model: "dall-e-3",
                 prompt: prompt,
@@ -116,8 +117,25 @@ app.post('/api/generate-image', async (req, res) => {
             });
             imageUrl = response.data[0].url;
         } catch (openaiErr) {
-            console.error("Erreur API OpenAI:", openaiErr.message);
-            return res.status(500).json({ error: "Erreur OpenAI: " + openaiErr.message });
+            if (openaiErr.message.includes("dall-e-3' does not exist")) {
+                console.warn("DALL-E 3 non disponible, fallback vers DALL-E 2...");
+                try {
+                    // Fallback vers DALL-E 2 pour les comptes Tier 0 (Sans crédit)
+                    const fallbackResponse = await openai.images.generate({
+                        model: "dall-e-2",
+                        prompt: prompt,
+                        n: 1,
+                        size: "1024x1024",
+                    });
+                    imageUrl = fallbackResponse.data[0].url;
+                } catch (fallbackErr) {
+                    console.error("Erreur API OpenAI (DALL-E 2):", fallbackErr.message);
+                    return res.status(500).json({ error: "Erreur OpenAI: " + fallbackErr.message });
+                }
+            } else {
+                console.error("Erreur API OpenAI:", openaiErr.message);
+                return res.status(500).json({ error: "Erreur OpenAI: " + openaiErr.message });
+            }
         }
 
         // C. Déduire les crédits et sauvegarder l'historique dans Supabase
