@@ -3,12 +3,18 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const { createClient } = require('@supabase/supabase-js');
+const OpenAI = require('openai');
 
 // ==========================================
 // CONFIGURATION
 // ==========================================
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Configuration OpenAI
+const openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY || 'VOTRE_CLE_API_OPENAI',
+});
 
 // Configuration Supabase
 const supabaseUrl = process.env.SUPABASE_URL || 'URL_DE_VOTRE_PROJET_SUPABASE';
