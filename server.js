@@ -117,9 +117,7 @@ app.post('/api/generate-image', async (req, res) => {
             imageUrl = response.data[0].url;
         } catch (openaiErr) {
             console.error("Erreur API OpenAI:", openaiErr.message);
-            console.warn("⚠️ Utilisation de l'API IA gratuite (Pollinations.ai) en fallback car la clé OpenAI est invalide ou vide.");
-            // Génère une vraie image IA gratuitement et sans clé API basée sur le prompt de l'utilisateur !
-            imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=1024&height=1024&nologo=true`;
+            return res.status(500).json({ error: "Erreur OpenAI: " + openaiErr.message });
         }
 
         // C. Déduire les crédits et sauvegarder l'historique dans Supabase
